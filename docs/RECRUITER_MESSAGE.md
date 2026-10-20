@@ -48,4 +48,7 @@ local 42-trial classifications. Recheck the latest main-branch status and
 public README/sample links before sending. The optional compatibility scope
 is documented in [REPLAY_SAFETY.md](REPLAY_SAFETY.md).
 
-Video is last: add a link only after the recording exists and has been verified.
+The video was recorded last and verified locally: a 113.52-second, silent,
+captioned MP4 at `artifacts/demo/trenguard-demo.mp4`. Review and attach that file
+when sending, or add a link after publishing a reviewed copy. No public video
+URL exists yet. See [DEMO_VIDEO.md](DEMO_VIDEO.md) for provenance and reproduction.

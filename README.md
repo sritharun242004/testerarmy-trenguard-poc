@@ -162,3 +162,15 @@ The local benchmark uses the filesystem-backed API instead. See
 
 For the same walkthrough locally, run `pnpm dev` and open
 `http://127.0.0.1:4173/checkout`.
+
+## Recorded walkthrough
+
+A **113.52-second silent, captioned browser recording** was verified locally
+after the CI repair. It shows real checkout/M1 interactions, then the completed
+benchmark's source, failure evidence and report. It does not pretend the saved
+benchmark is executing live or claim agent replay results.
+
+The video stays out of git and has no public video URL yet. See
+[recording instructions and verification](docs/DEMO_VIDEO.md) to reproduce
+`artifacts/demo/trenguard-demo.mp4` with the existing local benchmark and the
+optional `ffmpeg` tools.

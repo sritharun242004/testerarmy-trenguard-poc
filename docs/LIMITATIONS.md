@@ -7,6 +7,10 @@
   multi-user storage and must not be presented as the production persistence
   implementation or hosted benchmark oracle.
 - The browser tests and benchmark runner use only Chromium.
+- Process-lifecycle regression tests have been exercised on macOS and Linux.
+  Windows process-tree cleanup is unverified. POSIX cleanup covers descendants
+  remaining in the runner-owned process group; a forced kill of the parent
+  cannot run cleanup handlers.
 - The mutation catalog is intentionally small and reviewed; it is not a
   representative sample of all possible regressions.
 - The optional TesterArmy `e2e` adapter passes under the supported local Node

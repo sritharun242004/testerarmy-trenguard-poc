@@ -72,6 +72,29 @@ The command writes `artifacts/latest/results.json`, `summary.md`,
 for the Markdown and dashboard outputs; no example result is embedded in the
 generator.
 
+## Execution limits and CI diagnostics
+
+The runner launches Node directly rather than waiting on package-manager
+wrappers. Each trial logs its start and final status. The optional `timeouts`
+object in `proofforge.config.ts` accepts positive integer milliseconds:
+
+| Setting | Default | Boundary |
+| --- | --- | --- |
+| `startupMs` | 10000 | App readiness, including stalled health response bodies |
+| `scenarioMs` | 60000 | Scenario process and output-pipe completion |
+| `requestMs` | 5000 | Each oracle or health HTTP request |
+| `shutdownMs` | 2000 | Each graceful/forced child-shutdown wait |
+
+Timeouts and failed cleanup are not detections. SIGINT/SIGTERM stop new trials,
+clean up the current trial, and write the results gathered so far. Do not treat
+a partial report as a full matrix run.
+
+GitHub Actions has a ten-minute benchmark-step limit and a fifteen-minute core
+job limit. The workflow retains fixture-only report/evidence files as a
+seven-day Actions artifact, including available evidence after failure. It
+does not upload environment files, local data stores, or recordings. Local
+generated artifacts remain git-ignored.
+
 ## What is not claimed
 
 The rates describe only this small deterministic fixture and mutation set. They

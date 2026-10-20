@@ -61,7 +61,7 @@ async function runCommand(): Promise<void> {
   console.log(`Summary: ${result.paths.markdownPath}`);
   console.log(`Dashboard: ${path.join(outputDir, 'dashboard.html')}`);
   console.log(`Detected ${result.report.metrics.detectionRate.numerator}/${result.report.metrics.detectionRate.denominator} valid mutation trials.`);
-  if (config.failOnInconclusive && result.report.metrics.inconclusiveRate.numerator > 0) process.exitCode = 3;
+  if (!process.exitCode && config.failOnInconclusive && result.report.metrics.inconclusiveRate.numerator > 0) process.exitCode = 3;
 }
 
 async function reportCommand(): Promise<void> {

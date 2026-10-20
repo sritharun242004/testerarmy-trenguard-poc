@@ -37,6 +37,11 @@ Playwright tests ───────────────┐
   `/api/reset`.
 - `src/benchmark/runner.ts` executes baseline and mutation trials sequentially,
   captures health markers and runner evidence, and cleans up child processes.
+- `src/benchmark/process.ts` launches Node directly, drains bounded diagnostic
+  output, and owns the child process group on POSIX. Startup, scenario execution,
+  oracle requests, and shutdown have deadlines. An exited test process whose
+  descendants retain output pipes cannot leave the runner waiting forever.
+  Cleanup failures invalidate the trial instead of preserving a pass.
 - `src/benchmark/classifier.ts` is a pure classifier that does not count
   baseline failures, runner errors, or timeouts as detections.
 - `src/benchmark/metrics.ts`, `report.ts`, and `dashboard.ts` generate

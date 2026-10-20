@@ -1,5 +1,5 @@
-import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -7,10 +7,16 @@ import { setTimeout as sleep } from 'node:timers/promises';
 
 import { classifyMutation, withClassification } from './classifier.js';
 import { calculateMetrics } from './metrics.js';
+import { BenchmarkProcess } from './process.js';
 import { writeReport } from './report.js';
 import type { ExperimentReport, OracleEvidence, RunResult, RunStatus } from './types.js';
 import { findMutation, type MutationId } from '../mutations.js';
-import type { ProofForgeConfig } from './config.js';
+import type { BenchmarkTimeouts, ProofForgeConfig } from './config.js';
+
+const require = createRequire(import.meta.url);
+const defaultTimeouts: BenchmarkTimeouts = { startupMs: 10_000, scenarioMs: 60_000, shutdownMs: 2_000, requestMs: 5_000 };
+
+class DeadlineError extends Error {}
 
 export interface BenchmarkRunOptions {
   config: ProofForgeConfig;
@@ -22,8 +28,30 @@ export interface BenchmarkRunOptions {
 }
 
 export async function runBenchmark(options: BenchmarkRunOptions): Promise<{ report: ExperimentReport; paths: { jsonPath: string; markdownPath: string } }> {
+  const controller = new AbortController();
+  const interrupt = (signal: 'SIGINT' | 'SIGTERM'): void => {
+    process.exitCode = signal === 'SIGINT' ? 130 : 143;
+    controller.abort(new Error(`Benchmark interrupted by ${signal}.`));
+  };
+  const onInterrupt = (): void => interrupt('SIGINT');
+  const onTerminate = (): void => interrupt('SIGTERM');
+  process.on('SIGINT', onInterrupt);
+  process.on('SIGTERM', onTerminate);
+  try {
+    return await executeBenchmark(options, controller.signal);
+  } finally {
+    process.off('SIGINT', onInterrupt);
+    process.off('SIGTERM', onTerminate);
+  }
+}
+
+async function executeBenchmark(options: BenchmarkRunOptions, signal: AbortSignal): Promise<{ report: ExperimentReport; paths: { jsonPath: string; markdownPath: string } }> {
   if (options.config.runner !== 'playwright') {
     throw new Error('Runner "e2e" is optional and is not wired into the benchmark runner yet. Use the standalone e2e adapter command instead.');
+  }
+  const timeouts = { ...defaultTimeouts, ...options.config.timeouts };
+  for (const [name, value] of Object.entries(timeouts)) {
+    if (!Number.isInteger(value) || value < 1 || value > 2_147_483_647) throw new Error(`Invalid ${name}: expected a positive timer duration.`);
   }
   const experimentStartedAt = new Date().toISOString();
   const startedAtMs = Date.now();
@@ -31,10 +59,11 @@ export async function runBenchmark(options: BenchmarkRunOptions): Promise<{ repo
   await mkdir(evidenceDir, { recursive: true });
   const results: RunResult[] = [];
 
-  for (let repetition = 1; repetition <= options.repetitions; repetition += 1) {
+  trials: for (let repetition = 1; repetition <= options.repetitions; repetition += 1) {
     const baselineResults = new Map<string, RunResult>();
 
     for (const scenarioId of options.scenarioIds) {
+      if (signal.aborted) break trials;
       const result = await runTrial({
         scenarioId,
         mutationId: null,
@@ -42,6 +71,8 @@ export async function runBenchmark(options: BenchmarkRunOptions): Promise<{ repo
         expectedMutationId: null,
         options,
         evidenceDir,
+        timeouts,
+        signal,
       });
       results.push(result);
       baselineResults.set(scenarioId, result);
@@ -52,6 +83,7 @@ export async function runBenchmark(options: BenchmarkRunOptions): Promise<{ repo
       if (!definition) throw new Error(`Mutation ${mutationId} is not registered.`);
 
       for (const scenarioId of options.scenarioIds) {
+        if (signal.aborted) break trials;
         const result = await runTrial({
           scenarioId,
           mutationId,
@@ -59,6 +91,8 @@ export async function runBenchmark(options: BenchmarkRunOptions): Promise<{ repo
           expectedMutationId: mutationId,
           options,
           evidenceDir,
+          timeouts,
+          signal,
         });
         const baseline = baselineResults.get(scenarioId);
         if (!baseline) throw new Error(`Missing baseline for ${scenarioId}.`);
@@ -107,81 +141,57 @@ interface TrialOptions {
   expectedMutationId: MutationId | null;
   options: BenchmarkRunOptions;
   evidenceDir: string;
+  timeouts: BenchmarkTimeouts;
+  signal: AbortSignal;
 }
 
 async function runTrial(input: TrialOptions): Promise<RunResult> {
   const runId = `${input.scenarioId}-${input.mutationId ?? 'baseline'}-r${input.repetition}`;
+  console.log(`[TrenGuard] ${runId}: starting`);
   const startedAt = new Date().toISOString();
   const startedAtMs = Date.now();
   const port = await findFreePort();
   const tempDir = await mkdtemp(path.join(os.tmpdir(), 'proofforge-trial-'));
   const dataFile = path.join(tempDir, 'orders.json');
   const baseUrl = `http://127.0.0.1:${port}`;
-  let app: ChildProcess | undefined;
+  let app: BenchmarkProcess | undefined;
   let appHealth = '';
   let oracle: OracleEvidence = emptyOracle();
+  let runner: RunnerOutcome = { status: 'ERROR', error: null, output: '', runnerError: '', rawExitCode: null, assertions: [] };
 
   try {
-    app = spawn('pnpm', ['exec', 'tsx', 'src/server.ts', '--port', String(port)], {
-      cwd: process.cwd(),
-      env: {
-        ...process.env,
-        PROOFFORGE_DATA_FILE: dataFile,
-        ...(input.mutationId ? { PROOFFORGE_MUTATION: input.mutationId } : { PROOFFORGE_MUTATION: '' }),
-      },
-      stdio: ['ignore', 'pipe', 'pipe'],
+    app = new BenchmarkProcess(process.execPath, ['--import', require.resolve('tsx'), 'src/server.ts'], {
+      ...process.env,
+      HOST: '127.0.0.1',
+      PORT: String(port),
+      PROOFFORGE_DATA_FILE: dataFile,
+      ...(input.mutationId ? { PROOFFORGE_MUTATION: input.mutationId } : { PROOFFORGE_MUTATION: '' }),
     });
 
-    const health = await waitForHealth(baseUrl);
+    const health = await waitForHealth(baseUrl, app, input.timeouts, input.signal);
     appHealth = JSON.stringify(health);
     if (input.expectedMutationId && health.mutationId !== input.expectedMutationId) {
-      return await finishResult({
-        runId,
-        input,
-        startedAt,
-        startedAtMs,
-        status: 'ERROR',
-        error: `Mutation activation mismatch: expected ${input.expectedMutationId}, received ${health.mutationId ?? 'none'}.`,
-        output: '',
-        runnerError: '',
-        appHealth,
-      });
+      throw new Error(`Mutation activation mismatch: expected ${input.expectedMutationId}, received ${health.mutationId ?? 'none'}.`);
     }
 
-    const runner = await runPlaywright(input.scenarioId, baseUrl);
-    oracle = await inspectOracle(baseUrl, input.scenarioId, input.mutationId);
-    return await finishResult({
-      runId,
-      input,
-      startedAt,
-      startedAtMs,
-      status: runner.status,
-      error: runner.error,
-      output: runner.output,
-      runnerError: runner.runnerError,
-      appHealth,
-      rawExitCode: runner.rawExitCode,
-      durationMs: runner.durationMs,
-      assertions: runner.assertions,
-      oracle,
-    });
+    runner = await runPlaywright(input.scenarioId, baseUrl, path.join(input.evidenceDir, runId), input.timeouts, input.signal);
+    if (!input.signal.aborted) oracle = await inspectOracle(baseUrl, input.scenarioId, input.mutationId, input.timeouts.requestMs);
   } catch (error: unknown) {
-    return await finishResult({
-      runId,
-      input,
-      startedAt,
-      startedAtMs,
-      status: 'ERROR',
-      error: error instanceof Error ? error.message : String(error),
-      output: '',
-      runnerError: '',
-      appHealth,
-      oracle,
-    });
+    runner.status = input.signal.aborted ? 'CANCELLED' : error instanceof DeadlineError ? 'TIMEOUT' : 'ERROR';
+    runner.error = error instanceof Error ? error.message : String(error);
   } finally {
-    if (app) await stopProcess(app);
-    await rm(tempDir, { recursive: true, force: true });
+    try {
+      if (app) await app.stop(input.timeouts.shutdownMs);
+    } catch (error: unknown) {
+      runner.status = 'ERROR';
+      runner.error = [runner.error, `App cleanup failed: ${error instanceof Error ? error.message : String(error)}`].filter(Boolean).join('\n');
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
   }
+  // Finalize only after cleanup, so a cleanup failure cannot leave PASS evidence.
+  console.log(`[TrenGuard] ${runId}: ${runner.status} (${Date.now() - startedAtMs}ms)`);
+  return await finishResult({ runId, input, startedAt, startedAtMs, ...runner, baseUrl, appHealth, oracle, appOutput: app?.stdout ?? '', appError: app?.stderr ?? '' });
 }
 
 async function finishResult(input: {
@@ -194,6 +204,9 @@ async function finishResult(input: {
   output: string;
   runnerError: string;
   appHealth: string;
+  baseUrl: string;
+  appOutput: string;
+  appError: string;
   rawExitCode?: number | null;
   durationMs?: number;
   assertions?: RunResult['assertions'];
@@ -205,6 +218,8 @@ async function finishResult(input: {
     scenarioId: input.input.scenarioId,
     mutationId: input.input.mutationId,
     appHealth: input.appHealth,
+    appOutput: input.appOutput,
+    appError: input.appError,
     runnerOutput: input.output,
     runnerError: input.runnerError,
     error: input.error,
@@ -232,7 +247,7 @@ async function finishResult(input: {
     environment: {
       node: process.version,
       platform: `${process.platform}-${process.arch}`,
-      baseUrl: input.input.options.config.baseUrl,
+      baseUrl: input.baseUrl,
     },
     seed: input.input.options.seed,
     rawExitCode: input.rawExitCode ?? null,
@@ -248,12 +263,12 @@ function emptyOracle(): OracleEvidence {
   };
 }
 
-async function inspectOracle(baseUrl: string, scenarioId: string, mutationId: MutationId | null): Promise<OracleEvidence> {
+async function inspectOracle(baseUrl: string, scenarioId: string, mutationId: MutationId | null, requestMs: number): Promise<OracleEvidence> {
   if (!mutationId) return emptyOracle();
 
   try {
     if (mutationId === 'M1' && (scenarioId === 'S1' || scenarioId === 'S2')) {
-      const payload = await fetchJson<{ orders?: unknown[] }>(`${baseUrl}/api/orders`);
+      const payload = await fetchJson<{ orders?: unknown[] }>(`${baseUrl}/api/orders`, requestMs);
       const observed = Array.isArray(payload.orders) && payload.orders.length === 0;
       return {
         expectedSignal: 'ORDER_MISSING_AFTER_RELOAD',
@@ -264,32 +279,33 @@ async function inspectOracle(baseUrl: string, scenarioId: string, mutationId: Mu
     }
 
     if (mutationId === 'M2' && scenarioId === 'S2') {
-      const payload = await fetchJson<{ orders?: Array<{ totalCents?: unknown }> }>(`${baseUrl}/api/orders`);
+      const payload = await fetchJson<{ orders?: Array<{ totalCents?: unknown }> }>(`${baseUrl}/api/orders`, requestMs);
       const total = payload.orders?.[0]?.totalCents;
       const observed = typeof total === 'number' && total !== 2598;
       return { expectedSignal: 'TOTAL_MISMATCH', observed, source: 'GET /api/orders', details: { totalCents: typeof total === 'number' ? total : null, expectedTotalCents: 2598 } };
     }
 
     if (mutationId === 'M3' && scenarioId === 'S4') {
-      const response = await fetch(`${baseUrl}/api/admin/summary`);
+      const response = await fetch(`${baseUrl}/api/admin/summary`, { signal: AbortSignal.timeout(requestMs) });
+      await response.body?.cancel();
       return { expectedSignal: 'UNAUTHORIZED_ACTION_ALLOWED', observed: response.status === 200, source: 'GET /api/admin/summary', details: { status: response.status } };
     }
 
     if (mutationId === 'M4' && scenarioId === 'S5') {
-      const payload = await fetchJson<{ products?: unknown[] }>(`${baseUrl}/api/products/search?q=pen`);
+      const payload = await fetchJson<{ products?: unknown[] }>(`${baseUrl}/api/products/search?q=pen`, requestMs);
       const observed = Array.isArray(payload.products) && payload.products.length === 0;
       return { expectedSignal: 'EXPECTED_RESULT_MISSING', observed, source: 'GET /api/products/search?q=pen', details: { resultCount: Array.isArray(payload.products) ? payload.products.length : null } };
     }
 
     if (mutationId === 'M5' && scenarioId === 'S3') {
-      const payload = await fetchJson<{ profile?: { preferredName?: unknown } }>(`${baseUrl}/api/profile`);
+      const payload = await fetchJson<{ profile?: { preferredName?: unknown } }>(`${baseUrl}/api/profile`, requestMs);
       const preferredName = payload.profile?.preferredName;
       const observed = preferredName !== 'Ada Verified';
       return { expectedSignal: 'PROFILE_VALUE_MISSING_AFTER_RELOAD', observed, source: 'GET /api/profile', details: { preferredName: typeof preferredName === 'string' ? preferredName : null, expectedPreferredName: 'Ada Verified' } };
     }
 
     if (mutationId === 'M6' && scenarioId === 'S6') {
-      const payload = await fetchJson<{ records?: Array<{ id?: unknown; status?: unknown }> }>(`${baseUrl}/api/records`);
+      const payload = await fetchJson<{ records?: Array<{ id?: unknown; status?: unknown }> }>(`${baseUrl}/api/records`, requestMs);
       const records = Array.isArray(payload.records) ? payload.records : [];
       const selected = records.find((record) => record.id === 'record-002')?.status;
       const neighbor = records.find((record) => record.id === 'record-003')?.status;
@@ -316,43 +332,51 @@ function expectedSignalFor(mutationId: MutationId, scenarioId: string): string |
   }[key] ?? null;
 }
 
-async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetch(url);
+async function fetchJson<T>(url: string, requestMs: number): Promise<T> {
+  const response = await fetch(url, { signal: AbortSignal.timeout(requestMs) });
   if (!response.ok) throw new Error(`Oracle request failed with ${response.status}.`);
   return await response.json() as T;
 }
 
-async function runPlaywright(scenarioId: string, baseUrl: string): Promise<{
+interface RunnerOutcome {
   status: RunStatus;
   error: string | null;
   output: string;
   runnerError: string;
   rawExitCode: number | null;
-  durationMs: number;
   assertions: RunResult['assertions'];
-}> {
-  const startedAt = Date.now();
-  const processResult = await spawnAndCapture('pnpm', [
-    'exec',
-    'playwright',
+}
+
+async function runPlaywright(scenarioId: string, baseUrl: string, outputDir: string, timeouts: BenchmarkTimeouts, signal: AbortSignal): Promise<RunnerOutcome> {
+  const child = new BenchmarkProcess(process.execPath, [
+    require.resolve('@playwright/test/cli'),
     'test',
     '--config=playwright.benchmark.config.ts',
     '--grep',
     scenarioId,
     '--reporter=line',
+    '--output', outputDir,
   ], {
     ...process.env,
     PROOFFORGE_BASE_URL: baseUrl,
   });
+  const processResult = await child.capture(timeouts.scenarioMs, timeouts.shutdownMs, signal);
   const parsed = parsePlaywrightReport(processResult.stdout);
-  const status = parsed?.status ?? (processResult.exitCode === 0 ? 'PASS' : 'FAIL');
+  const lifecycleError = processResult.cleanupError ?? processResult.error
+    ?? (processResult.signal ? `Playwright terminated by ${processResult.signal}.` : null)
+    ?? (parsed?.status === 'PASS' && processResult.exitCode !== 0 ? `Playwright exited with code ${processResult.exitCode} after reporting a pass.` : null);
+  const status = processResult.cancelled ? 'CANCELLED' : processResult.timedOut ? 'TIMEOUT'
+    : lifecycleError ? 'ERROR'
+    : parsed?.status ?? 'ERROR';
+  const error = processResult.cancelled ? `${String(signal.reason)}${processResult.cleanupError ? ` ${processResult.cleanupError}` : ''}`
+    : processResult.timedOut ? `Scenario deadline exceeded (${timeouts.scenarioMs}ms).${lifecycleError ? ` ${lifecycleError}` : ''}`
+    : lifecycleError ?? parsed?.error ?? (status === 'PASS' ? null : processResult.stderr || 'Playwright did not produce a scenario result.');
   return {
     status,
-    error: parsed?.error ?? (status === 'PASS' ? null : processResult.stderr || 'Playwright scenario failed.'),
+    error,
     output: processResult.stdout,
     runnerError: processResult.stderr,
     rawExitCode: processResult.exitCode,
-    durationMs: Date.now() - startedAt,
     assertions: [{ id: `${scenarioId}.playwright`, passed: status === 'PASS', ...(parsed?.error ? { message: parsed.error } : {}) }],
   };
 }
@@ -399,20 +423,24 @@ function collectTests(value: unknown): Array<{ status: string; error: string | n
   return found;
 }
 
-async function waitForHealth(baseUrl: string): Promise<{ status: string; mutationId: string | null; mutationMarker: string }> {
-  const deadline = Date.now() + 10_000;
+async function waitForHealth(baseUrl: string, app: BenchmarkProcess, timeouts: BenchmarkTimeouts, signal: AbortSignal): Promise<{ status: string; mutationId: string | null; mutationMarker: string }> {
+  const deadline = AbortSignal.timeout(timeouts.startupMs);
+  const stopped = AbortSignal.any([deadline, app.exited, signal]);
   let lastError = 'Health check did not respond.';
-  while (Date.now() < deadline) {
+  while (!stopped.aborted) {
     try {
-      const response = await fetch(`${baseUrl}/health`);
+      const response = await fetch(`${baseUrl}/health`, { signal: AbortSignal.any([stopped, AbortSignal.timeout(timeouts.requestMs)]) });
       if (response.ok) return await response.json() as { status: string; mutationId: string | null; mutationMarker: string };
       lastError = `Health check returned ${response.status}.`;
+      await response.body?.cancel();
     } catch (error: unknown) {
       lastError = error instanceof Error ? error.message : String(error);
     }
-    await sleep(100);
+    await sleep(100, undefined, { signal: stopped }).catch(() => {});
   }
-  throw new Error(lastError);
+  signal.throwIfAborted();
+  if (app.exited.aborted) throw new Error(`App exited before readiness: ${String(app.exited.reason)} ${app.stderr}`);
+  throw new DeadlineError(`App startup deadline exceeded (${timeouts.startupMs}ms): ${lastError}`);
 }
 
 async function findFreePort(): Promise<number> {
@@ -430,25 +458,4 @@ async function findFreePort(): Promise<number> {
       server.close((error) => error ? reject(error) : resolve(port));
     });
   });
-}
-
-async function spawnAndCapture(command: string, args: string[], env: NodeJS.ProcessEnv): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
-  return await new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd: process.cwd(), env, stdio: ['ignore', 'pipe', 'pipe'] });
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
-    child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
-    child.once('error', reject);
-    child.once('close', (exitCode) => resolve({ stdout, stderr, exitCode }));
-  });
-}
-
-async function stopProcess(child: ChildProcess): Promise<void> {
-  if (child.exitCode !== null) return;
-  child.kill('SIGTERM');
-  await Promise.race([
-    new Promise<void>((resolve) => child.once('close', () => resolve())),
-    sleep(2_000).then(() => { child.kill('SIGKILL'); }),
-  ]);
 }

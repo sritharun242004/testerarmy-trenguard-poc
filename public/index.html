@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#8b5cf6" />
+    <meta
+      name="description"
+      content="TrenGuard checkout and order-history verification demo."
+    />
+    <title>TrenGuard · Checkout proof</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="TrenGuard home">
+          <span class="brand-mark" aria-hidden="true">TG</span>
+          <span>
+            <span class="brand-eyebrow">Verification lab</span>
+            <span class="brand-name">TrenGuard</span>
+          </span>
+        </a>
+
+        <nav class="main-nav" aria-label="Primary navigation">
+          <a class="nav-link" data-route="checkout" href="/checkout">Checkout</a>
+          <a class="nav-link" data-route="orders" href="/orders">Order history</a>
+          <a class="nav-link" data-route="settings" href="/settings">Settings</a>
+          <a class="nav-link" data-route="search" href="/search">Search</a>
+          <a class="nav-link" data-route="records" href="/records">Records</a>
+        </nav>
+
+        <button class="button button-quiet" id="reset-data" type="button">
+          Reset demo data
+        </button>
+      </header>
+
+      <main id="app" class="page" aria-live="polite"></main>
+
+      <footer class="footer">
+        <span>Phase 1 · deterministic local fixture</span>
+        <span class="footer-status"><span class="status-dot" aria-hidden="true"></span> Test-ready</span>
+      </footer>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://proofforge.local/schemas/result.schema.json",
+  "title": "TrenGuard experiment report",
+  "type": "object",
+  "required": ["schemaVersion", "experiment", "results", "metrics", "limitations"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "experiment": {
+      "type": "object",
+      "required": ["id", "name", "seed", "runner", "startedAt", "durationMs", "repetitions", "scenarios", "mutations"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "seed": { "type": "string", "minLength": 1 },
+        "runner": { "enum": ["playwright", "e2e"] },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "durationMs": { "type": "integer", "minimum": 0 },
+        "repetitions": { "type": "integer", "minimum": 1 },
+        "scenarios": { "type": "array", "items": { "type": "string" } },
+        "mutations": { "type": "array", "items": { "enum": ["M1", "M2", "M3", "M4", "M5", "M6"] } }
+      }
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["runId", "experimentId", "scenarioId", "mutationId", "repetition", "startedAt", "durationMs", "status", "runner", "assertions", "error", "evidence", "environment", "seed", "rawExitCode"],
+        "properties": {
+          "runId": { "type": "string" },
+          "experimentId": { "type": "string" },
+          "scenarioId": { "type": "string" },
+          "mutationId": { "type": ["string", "null"], "enum": ["M1", "M2", "M3", "M4", "M5", "M6", null] },
+          "repetition": { "type": "integer", "minimum": 1 },
+          "startedAt": { "type": "string", "format": "date-time" },
+          "durationMs": { "type": "integer", "minimum": 0 },
+          "status": { "enum": ["PASS", "FAIL", "ERROR", "TIMEOUT", "SKIPPED", "CANCELLED"] },
+          "runner": { "enum": ["playwright", "e2e"] },
+          "assertions": { "type": "array" },
+          "error": { "type": ["string", "null"] },
+          "evidence": {
+            "type": "object",
+            "required": ["runnerOutput", "runnerError", "appHealth", "oracle"],
+            "properties": {
+              "runnerOutput": { "type": "string" },
+              "runnerError": { "type": "string" },
+              "appHealth": { "type": "string" },
+              "oracle": {
+                "type": "object",
+                "required": ["expectedSignal", "observed", "source", "details"],
+                "properties": {
+                  "expectedSignal": { "type": ["string", "null"] },
+                  "observed": { "type": "boolean" },
+                  "source": { "type": "string" },
+                  "details": { "type": "object" }
+                }
+              }
+            }
+          },
+          "environment": { "type": "object" },
+          "seed": { "type": "string" },
+          "rawExitCode": { "type": ["integer", "null"] },
+          "mutationOutcome": { "enum": ["DETECTED", "MISSED", "FALSE_FAILURE", "INCONCLUSIVE", "NOT_APPLICABLE"] },
+          "reasonCode": { "type": "string" }
+        }
+      }
+    },
+    "metrics": { "type": "object" },
+    "limitations": { "type": "array", "items": { "type": "string" } }
+  }
+}

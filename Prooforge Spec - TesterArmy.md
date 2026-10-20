@@ -49,7 +49,7 @@ verification.
 
 **Name:** TrenGuard\
 **Tagline:** *Measure whether your tests catch the bugs that matter.*\
-**Repository suggestion:** `testerarmy-proofforge-poc`
+**Repository:** `testerarmy-trenguard-poc`
 
 **Primary PoC:** Adversarial verification / mutation benchmark for E2E
 tests.\

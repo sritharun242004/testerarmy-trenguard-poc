@@ -63,6 +63,21 @@ a {
   background-size: 18px 18px;
 }
 
+.hosted-notice {
+  margin: 20px clamp(20px, 5vw, 64px) 0;
+  padding: 16px 20px;
+  border: 1px solid var(--border-soft);
+  border-left: 4px solid var(--accent-dark);
+  border-radius: var(--radius-sm);
+  background: var(--surface-tint);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.hosted-notice strong {
+  display: block;
+}
+
 .topbar {
   position: sticky;
   top: 0;
@@ -761,6 +776,7 @@ h3 {
   .main-nav {
     order: 3;
     width: 100%;
+    flex-wrap: wrap;
     justify-content: center;
     padding-top: 4px;
     border-top: 1px solid var(--border-soft);

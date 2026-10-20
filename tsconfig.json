@@ -15,5 +15,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts", "mutation-tests/**/*.ts", "benchmark-tests/**/*.ts", "playwright.config.ts", "playwright.mutation.config.ts", "playwright.benchmark.config.ts", "proofforge.config.ts"]
+  "include": ["api/**/*.ts", "src/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts", "mutation-tests/**/*.ts", "benchmark-tests/**/*.ts", "playwright.config.ts", "playwright.mutation.config.ts", "playwright.benchmark.config.ts", "proofforge.config.ts"]
 }

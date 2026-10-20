@@ -1,6 +1,16 @@
 {
+  "framework": null,
+  "installCommand": "npx --yes pnpm@12.9.1 install --frozen-lockfile",
+  "buildCommand": "pnpm build",
+  "outputDirectory": "public",
   "rewrites": [
+    { "source": "/health", "destination": "/api/demo" },
+    { "source": "/api/:path*", "destination": "/api/demo" },
     { "source": "/checkout", "destination": "/" },
-    { "source": "/orders", "destination": "/" }
+    { "source": "/orders", "destination": "/" },
+    { "source": "/settings", "destination": "/" },
+    { "source": "/admin", "destination": "/" },
+    { "source": "/search", "destination": "/" },
+    { "source": "/records", "destination": "/" }
   ]
 }

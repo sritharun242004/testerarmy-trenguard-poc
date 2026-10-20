@@ -10,3 +10,4 @@ playwright-report/
 proofforge.config.js
 proofforge.config.js.map
 .DS_Store
+.vercel

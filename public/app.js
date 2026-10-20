@@ -9,10 +9,14 @@ let fixtures;
 void start();
 
 async function start() {
+  wireResetButton();
   try {
     fixtures = await getJson('/api/fixtures');
+    if (fixtures.hosted) {
+      document.querySelector('#hosted-notice').hidden = false;
+      document.querySelector('.footer > span').textContent = 'Hosted walkthrough · short-lived browser-cookie state';
+    }
     await render(currentRoute);
-    wireResetButton();
   } catch (error) {
     app.innerHTML = renderError('The demo could not load its deterministic fixture data.');
     console.error(error);

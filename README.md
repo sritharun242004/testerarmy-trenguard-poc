@@ -1,5 +1,10 @@
 # TrenGuard
 
+**Live demo:** https://testerarmy-trenguard-poc.vercel.app/checkout
+
+The hosted link is a browser-scoped recruiter demo, not a hosted benchmark or
+production database. See [hosting details](docs/VERCEL_DEMO.md).
+
 TrenGuard measures whether end-to-end tests verify a business outcome instead
 of only checking that a success message appeared. It runs a deterministic
 healthy baseline, activates controlled regressions, and reports which scenarios
@@ -15,7 +20,7 @@ TesterArmy `e2e` adapter with runtime preflight.
 
 - **Product name:** TrenGuard
 - **Tagline:** Measure whether tests catch real regressions.
-- **Planned repository:** `testerarmy-proofforge-poc`
+- **Repository:** https://github.com/sritharun242004/testerarmy-trenguard-poc
 - **Internal package and CLI:** `proofforge` (kept stable to avoid unnecessary
   renaming of the benchmark's technical interfaces)
 
@@ -94,20 +99,19 @@ The UI follows the BotStudioX reference at
 This is a focused product UI, not a dashboard. The visual system makes the
 verification path legible without adding visual complexity to the experiment.
 
-## Vercel hosting plan
+## Vercel hosted demo
 
-The UI is plain static HTML/CSS/JavaScript under `public/`, which keeps the
-presentation deployable as a Vercel static project without changing the local
-Playwright target. `/checkout` and `/orders` are covered by `vercel.json` SPA
-rewrites.
+The UI is plain static HTML/CSS/JavaScript under `public/`, and
+`api/demo.ts` provides the same demo endpoints as a Vercel Function.
+`/checkout`, `/orders`, `/settings`, `/admin`, `/search`, and `/records` are
+covered by `vercel.json` SPA rewrites.
 
-The filesystem-backed API is deliberately the Phase 1 local benchmark
-implementation. Vercel's serverless filesystem is not a durable database, so
-the benchmark does not claim that a Vercel preview is a reliable persistence
-oracle. Before deploying a hosted benchmark, add an explicit storage adapter
-(for example, a Vercel-supported database) and rerun the persistence tests
-against that environment. That is a later integration decision, not hidden in
-Phase 1.
+The local benchmark still uses the filesystem-backed API and JSON store. The
+hosted demo uses an HttpOnly browser cookie for short-lived demo state so a
+recruiter can place an order and reload the order-history page without a
+database. This is intentionally a demo transport, not durable multi-user
+persistence or a hosted benchmark oracle. See `docs/VERCEL_DEMO.md` for the
+deployment and limitation details.
 
 ## Test scenarios
 
@@ -155,8 +159,10 @@ src/fixtures.ts       Fixed products and checkout input.
 src/mutations.ts      Stable mutation registry and M1-M6 activation contracts.
 src/store.ts          File-backed order store and reset behavior.
 src/server.ts         Loopback HTTP server and JSON/static routes.
+api/demo.ts           Separate Vercel demo API with bounded browser-cookie state.
 src/benchmark/        Runner, classifier, metrics, reports, and dashboard.
 scripts/proofforge.ts CLI for run/report/list/validation.
+scripts/smoke-hosted.ts Browser checks against a deployed demo URL.
 public/               Vercel-friendly UI assets.
 tests/checkout.spec.ts Weak and strong checkout scenarios.
 tests/reset.spec.ts   Reset and fixture stability checks.
@@ -188,10 +194,3 @@ The adapter was run successfully with Node `v24.19.0`, Chromium, and no model
 calls because the test uses deterministic locators/assertions only. See
 `docs/REPLAY_SAFETY.md`. No credentials or model calls are required by the
 core benchmark.
-
-## Vercel limitation
-
-The UI is static-file/Vercel-friendly, but the JSON file store is local-only.
-Vercel serverless filesystems are not a durable persistence oracle. Before
-using a hosted preview for benchmark claims, add a durable Vercel-supported
-storage adapter and rerun the same persistence scenarios against it.

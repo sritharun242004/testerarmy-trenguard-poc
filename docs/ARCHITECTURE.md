@@ -49,12 +49,15 @@ Playwright tests ───────────────┐
 
 ## Vercel boundary
 
-The browser assets are static and the route rewrites in `vercel.json` support
-the two client routes on Vercel. Phase 1's JSON file is local-only because a
-serverless filesystem is not a durable persistence layer. A future hosted
-adapter must provide a durable store and use the same `OrderRecord` contract;
-it must not silently replace the strong persistence oracle with a UI-only
-success response.
+The static UI and all six client routes are served on Vercel. The separate
+`api/demo.ts` handler provides a recruiter walkthrough using one-hour,
+browser-scoped cookie state. The UI explicitly labels this as a demo, not the
+benchmark. Cookie values are bounded and validated, but unsigned and not
+authoritative; there are no real accounts or payments.
+
+The local benchmark still uses `OrderStore` and JSON files, never the cookie
+adapter. Hosted benchmark claims would require durable server-side storage
+and independent verification. See `VERCEL_DEMO.md` for deployment boundaries.
 
 ## Deliberate omissions
 

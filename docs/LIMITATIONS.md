@@ -2,9 +2,10 @@
 
 - The persistence implementation is a local JSON file, selected to keep the
   first slice cheap and deterministic. It is not a production database.
-- The Vercel configuration serves the UI routes, but the local JSON API is not
-  a durable hosted persistence solution. Choose and document a hosted storage
-  adapter before using Vercel as a benchmark target.
+- The Vercel demo uses an HttpOnly browser cookie for short-lived per-browser
+  state. It is suitable for a recruiter walkthrough, but it is not durable
+  multi-user storage and must not be presented as the production persistence
+  implementation or hosted benchmark oracle.
 - The browser tests and benchmark runner use only Chromium.
 - The mutation catalog is intentionally small and reviewed; it is not a
   representative sample of all possible regressions.

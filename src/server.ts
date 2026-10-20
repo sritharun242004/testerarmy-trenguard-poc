@@ -13,7 +13,9 @@ import { OrderStore, StoreInputError } from './store.js';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const publicRoot = path.join(projectRoot, 'public');
-const dataFile = process.env.PROOFORGE_DATA_FILE ?? path.join(projectRoot, 'data', 'orders.json');
+// Match the benchmark runner; retain the original spelling for existing callers.
+const dataFile = process.env.PROOFFORGE_DATA_FILE ?? process.env.PROOFORGE_DATA_FILE
+  ?? path.join(projectRoot, 'data', 'orders.json');
 const host = process.env.HOST ?? '127.0.0.1';
 const portArgumentIndex = process.argv.indexOf('--port');
 const requestedPort = portArgumentIndex >= 0 ? process.argv[portArgumentIndex + 1] : undefined;

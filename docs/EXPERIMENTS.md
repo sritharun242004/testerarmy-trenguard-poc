@@ -95,6 +95,24 @@ seven-day Actions artifact, including available evidence after failure. It
 does not upload environment files, local data stores, or recordings. Local
 generated artifacts remain git-ignored.
 
+### Verified shutdown repair
+
+The old [run 39413401123](https://github.com/sritharun242004/testerarmy-trenguard-poc/actions/runs/39413401123)
+printed its completed report at 11:17:32 UTC but remained active until manual
+cancellation at 13:36:09 UTC on 20 October 2026. The cancellation log lists
+orphaned package-manager, shell, and Node processes. The old shutdown code
+signalled the wrapper rather than its descendants and did not await forced
+cleanup. A real child-process regression also reproduces the related case of
+an exited process retaining open output pipes through a descendant.
+
+After direct Node launches, owned process-group cleanup, and deadlines were
+added, [run 39433113320](https://github.com/sritharun242004/testerarmy-trenguard-poc/actions/runs/39433113320)
+completed both jobs successfully. The core job finished in 2m41s; its downloaded
+report contains 42 trials, 6/7 detections, S1/M1 missed, S2/M1 detected, and no
+false failures or inconclusive applicable pairs. The matching local run and
+focused four-trial M1 command also completed. This is shutdown/reproducibility
+evidence, not a controlled performance comparison.
+
 ## What is not claimed
 
 The rates describe only this small deterministic fixture and mutation set. They
